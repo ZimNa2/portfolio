@@ -1,0 +1,290 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb, graphicx, geometry, fancyhdr}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\geometry{margin=2cm}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Projet  - Analyse Numérique}
+\fancyfoot[C]{Page \thepage}
+
+\definecolor{codegray}{gray}{0.9}
+\lstset{
+  backgroundcolor=\color{codegray},
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  stepnumber=1,
+  numbersep=5pt,
+  showstringspaces=false,
+  tabsize=2,
+  language=Matlab
+}
+
+\begin{document}
+
+
+\begin{center}
+    {\LARGE \textbf{Projet : Point d'équilibre d'une réaction chimique}}\\[1em]
+    {\large Résolution d'équations non linéaires par méthodes numériques}\\[0.5em]
+\end{center}
+
+\section*{Introduction}
+La détermination du point d'équilibre d'une réaction chimique est une problématique fondamentale en physico-chimie. 
+Lorsqu'un système atteint l'équilibre, les concentrations des espèces chimiques satisfont une équation non linéaire issue 
+de la loi d'action de masse. Ces équations sont d'autant plus complexes qu'elles ne possèdent généralement aucune solution 
+analytique fermée.
+
+Dans ce projet, nous nous plaçons dans le cas du système carbonate-dioxyde de carbone dissous, un modèle classique 
+en chimie aqueuse. La variable inconnue sera la concentration en ions hydrogène \(h = [\mathrm{H^+}]\). La résolution 
+numérique de l'équation d'équilibre constituera notre étude de cas.
+
+\section*{Objectifs}
+\begin{itemize}
+    \item Formuler et modéliser l'équation d'équilibre chimique à résoudre.
+    \item Implémenter et comparer les méthodes de Newton et de bissection.
+    \item Analyser la vitesse de convergence et la robustesse selon différentes conditions initiales.
+    \item Mettre en évidence l'intérêt de chaque méthode dans un contexte physico-chimique.
+\end{itemize}
+
+\section*{Modélisation du problème}
+On considère le système d'équilibre :
+\[
+\mathrm{CO_2 + H_2O \rightleftharpoons H^+ + HCO_3^-} \quad (K_1)
+\]
+\[
+\mathrm{HCO_3^- \rightleftharpoons H^+ + CO_3^{2-}} \quad (K_2)
+\]
+
+Avec :
+\[
+K_1 = 10^{-6.35}, \qquad K_2 = 10^{-10.33}, \qquad K_w = 10^{-14}
+\]
+
+et une concentration totale en carbone dissous :
+\[
+\mathrm{DIC} = 2 \times 10^{-3} \quad \text{mol/L}
+\]
+
+Après application de la neutralité électrique et des lois d'équilibre, on obtient l'équation non linéaire suivante :
+\[
+f(h) = h - \frac{\mathrm{DIC}\left(\dfrac{K_1}{h} + \dfrac{2K_1K_2}{h^2} \right)}
+{1 + \dfrac{K_1}{h} + \dfrac{K_1K_2}{h^2}} - \frac{K_w}{h} = 0.
+\]
+
+Cette équation ne possède aucune solution analytique, et sera résolue numériquement.
+
+\section*{Méthodes numériques}
+
+\subsection*{Méthode de Newton}
+La formule itérative est :
+\[
+h_{n+1} = h_n - \frac{f(h_n)}{f'(h_n)}.
+\]
+
+Elle possède une convergence quadratique si le point initial est bien choisi et si \(f'\) ne s'annule pas.
+
+\subsection*{Méthode de bissection}
+Elle repose sur le théorème des valeurs intermédiaires en réduisant successivement l'intervalle :
+\[
+c = \frac{a + b}{2}.
+\]
+
+Cette méthode est plus lente mais absolument robuste.
+
+
+\section*{Code MATLAB — Fonctions utilisées}
+
+\subsection*{Fonction dérivée auxiliaire : dTdh}
+La dérivée de la fraction représentant la partie carbonate de la fonction chimique est calculée dans une fonction MATLAB séparée : 
+
+\begin{lstlisting}
+function val = dTdh(h, DIC, K1, K2)
+    A = K1./h + 2*K1.*K2./(h.^2);
+    Ad = -K1./(h.^2) - 4*K1.*K2./(h.^3);
+    denom = 1 + K1./h + K1.*K2./(h.^2);
+    den_d = -K1./(h.^2) - 2*K1.*K2./(h.^3);
+    val = DIC .* ( Ad .* denom - A .* den_d ) ./ (denom.^2);
+end
+\end{lstlisting}
+
+\subsection*{Fonction chimique : f(h) et sa dérivée df(h)}
+\begin{lstlisting}
+% Parametres chimiques
+
+pK1 = 6.35; pK2 = 10.33;
+K1 = 10^(-pK1);
+K2 = 10^(-pK2);
+Kw = 1e-14;
+DIC = 2e-3;
+
+
+% Fonction f(h) et sa derivee
+f = @(h) h - ( DIC * ( K1./h + 2*K1.*K2./(h.^2) ) ) ./ ...
+         ( 1 + K1./h + K1.*K2./(h.^2) ) - Kw./h;
+
+
+df = @(h) 1 - dTdh(h, DIC, K1, K2) + Kw./(h.^2);
+
+
+\end{lstlisting}
+
+
+
+
+
+
+\subsection*{Méthode de Newton}
+Comme on veut tracer les itérations, on utilise une version modifiée de Newton qui renvoie l’historique de chaque itération.
+\begin{lstlisting}
+function [x, iter, history] = newton_track(f, df, x0, tol, nmax)
+    x = x0;
+    history = x0;
+    for i=1:nmax
+        xnew = x - f(x)/df(x);
+        history(end+1) = xnew;
+        if abs(xnew - x) < tol
+            iter = i;
+            x = xnew;
+            return;
+        end
+        x = xnew;
+    end
+    iter = nmax;
+end
+\end{lstlisting}
+
+\subsection*{Méthode de bissection}
+Même chose que la méthode de Newton, mais cette fois ci pour la bissection.
+\begin{lstlisting}
+function [x, iter, history] = bissection_track(f, a, b, tol)
+    iter = 0;
+    history = [];
+    while (b - a)/2 > tol
+        c = (a + b)/2;
+        history(end+1) = c;
+        if f(c) == 0
+            x = c; return;
+        elseif sign(f(c)) == sign(f(a))
+            a = c;
+        else
+            b = c;
+        end
+        iter = iter + 1;
+    end
+    x = (a + b)/2;
+end
+\end{lstlisting}
+\newpage
+\section*{Tests et résultats}
+\subsection*{Génération des tests et graphiques}
+\begin{lstlisting}
+tol = 1e-12; nmax = 50;
+
+% Newton
+x0 = 1e-5;
+[rootN, iterN, histN] = newton_track(f, df, x0, tol, nmax);
+
+% Bissection
+a = 1e-10; b = 1e-2;
+[rootB, iterB, histB] = bisection_track(f, a, b, tol);
+
+% Affichage des resultats
+fprintf('Newton : h = %.12f en %d itérations\n', rootN, iterN);
+fprintf('Bissection : h = %.12f en %d itérations\n', rootB, iterB);
+fprintf('pH à l''équilibre = %.4f\n', -log10(rootN));
+
+h_vals = logspace(-12,0,2000);
+
+% Graphe 1 : f(h) avec points Newton
+figure;
+semilogx(h_vals,f(h_vals),'LineWidth',1.6); hold on; grid on;
+plot(h_vals, zeros(size(h_vals)),'k--','LineWidth',1.2);
+scatter(histN, f(histN),50,'r','filled');   % points Newton
+xlabel('[H^+] (mol/L)'); ylabel('f(h)');
+title('Equation d''equilibre : f(h)=0 avec points Newton');
+legend('f(h)','y=0','Newton');
+
+% Graphe 2 : f(h) avec points Bissection
+figure;
+semilogx(h_vals,f(h_vals),'LineWidth',1.6); hold on; grid on;
+plot(h_vals, zeros(size(h_vals)),'k--','LineWidth',1.2);
+scatter(histB, f(histB),50,'b','filled');   % points Bissection
+xlabel('[H^+] (mol/L)'); ylabel('f(h)');
+title('Equation d''equilibre : f(h)=0 avec points Bissection');
+legend('f(h)','y=0','Bissection');
+
+% Convergence Newton
+figure;
+semilogy(abs(histN-rootN),'-o','LineWidth',1.6);
+grid on; xlabel('Itération'); ylabel('|h_n - h*|');
+title('Convergence de Newton');
+
+% Convergence Bissection
+figure;
+semilogy(abs(histB - rootB),'-o','LineWidth',1.6);
+grid on;
+xlabel('Itération');
+ylabel('|h_n - h*|');
+title('Convergence de la bissection');
+
+% Comparaison Newton vs Bissection
+figure;
+semilogy(abs(histN-rootN),'-or','LineWidth',1.6); hold on;
+semilogy(abs(histB-rootB),'-ob','LineWidth',1.6);
+grid on; xlabel('Itération'); ylabel('|h_n - h*|');
+title('Comparaison Newton vs Bissection');
+legend('Newton','Bissection');
+\end{lstlisting}
+
+\subsection*{Figures}
+\begin{center}
+\includegraphics[width=0.6\textwidth]{convergence_newton.png}
+\end{center}
+\textit{Figure 1 : Graphique de f(h) avec les points d'itérations de Newton.}
+
+\begin{center}
+\includegraphics[width=0.6\textwidth]{convergence_bissection.png}
+\end{center}
+\textit{Figure 2 : Graphique de f(h) avec les points d'itérations de la bissection.}
+
+\begin{center}
+\includegraphics[width=0.6\textwidth]{convergence_n2.png}
+\end{center}
+\textit{Figure 3 : Convergence de Newton (erreur en fonction des itérations).}
+
+\begin{center}
+\includegraphics[width=0.6\textwidth]{convergence_b2.png}
+\end{center}
+\textit{Figure 4 : Convergence de la bissection (erreur en fonction des itérations).}
+
+\begin{center}
+\includegraphics[width=0.6\textwidth]{convergence_nvsb.png}
+\end{center}
+\textit{Figure 5 : Comparaison entre la convergence de Newton et celle de Bissection.}
+
+\section*{Analyse des résultats}
+\begin{itemize}
+    \item \textbf{Racine trouvée} : $h_\text{eq} \approx 6.1 \cdot 10^{-5}$ mol/L, cohérente avec la chimie du système.
+    \item \textbf{Vitesse Newton} : converge en quelques itérations (quadratique), rapide si le point initial est bien choisi.
+    \item \textbf{Vitesse bissection} : converge plus lentement (linéaire) mais robustesse absolue.
+    \item \textbf{Visualisation} : les graphes permettent de comprendre l'évolution des itérations et l'efficacité relative des méthodes.
+\end{itemize}
+
+\section*{Conclusion}
+La résolution numérique de l’équation d’équilibre chimique du système carbonate-dioxyde de carbone illustre l’importance des méthodes numériques pour des problèmes sans solution analytique.
+
+\begin{itemize}
+    \item La \textbf{méthode de Newton} s’avère très efficace : sa \emph{convergence quadratique} permet d’atteindre rapidement la racine si un point initial approprié est choisi, ce qui en fait un outil idéal pour des applications nécessitant précision et rapidité.
+    \item La \textbf{méthode de bissection}, bien que plus lente (convergence linéaire), offre une \emph{robustesse totale} et garantit de trouver une solution même en l’absence d’information sur la dérivée.
+\end{itemize}
+
+L’analyse des graphiques de convergence et des points d’itération montre clairement les différences de comportement entre les deux méthodes. Selon le contexte expérimental ou industriel, le choix de la méthode dépendra donc de \emph{la précision souhaitée, de la connaissance du système et de la rapidité nécessaire}.
+
+En résumé, ce projet démontre comment combiner \textbf{modélisation chimique} et \textbf{techniques numériques} pour résoudre efficacement des problèmes complexes, tout en illustrant l’intérêt de comparer plusieurs méthodes afin de choisir la plus adaptée à chaque situation.
+
+\end{document}
